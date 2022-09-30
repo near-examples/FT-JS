@@ -1,0 +1,20 @@
+{
+  "author": {
+    "name": "Dennis",
+    "email": "dennis@near.org"
+  },
+  "license": "MIT",
+  "module": "index.js",
+  "description": "A simple example for a fungible token contract in JavaScript.",
+  "type": "module",
+  "scripts": {
+    "build": "near-sdk-js build src/index.js build/contract.wasm",
+    "test": "ava"
+  },
+  "dependencies": {
+    "near-sdk-js": "0.5.0"
+  },
+  "devDependencies": {
+    "ava": "^4.3.3"
+  }
+}
