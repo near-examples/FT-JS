@@ -120,7 +120,7 @@ export class FungibleToken {
   }
 
   @call({})
-  ft_transfer({ received_id: receiverId, amount, memo }) {
+  ft_transfer({ receiver_id: receiverId, amount, memo }) {
     let senderId = near.predecessorAccountId();
     this.internalTransfer({ senderId, receiverId, amount, memo });
   }
