@@ -1,49 +1,58 @@
 import { NearBindgen, call, view, initialize, near, LookupMap, assert } from "near-sdk-js";
 
 // TODO: assert one yocto implementation
-// TODO: storage management
+
 
 @NearBindgen({ initRequired: true })
 export class FungibleToken {
-  constructor() {
-    this.accounts = new LookupMap("a");
-    this.accountRegistrants = new LookupMap("r");
-    this.accountDeposits = new LookupMap("c");
-    this.totalSupply = BigInt(0);
-  }
+  accounts = new LookupMap("a");
+  accountRegistrants = new LookupMap("r");
+  accountDeposits = new LookupMap("c");
+  totalSupply = "0";
 
   @initialize({})
-  init({ prefix, total_supply: totalSupply }) {
-    this.accounts = new LookupMap(prefix);
-    this.totalSupply = BigInt(totalSupply);
+  init({ total_supply: totalSupply }) {
+    assert(BigInt(totalSupply) > BigInt(0), "Total supply should be a positive number");
+    assert(this.totalSupply === "0", "Contract is already initialized");
+    this.totalSupply = totalSupply;
     this.accounts.set(near.signerAccountId(), this.totalSupply);
   }
 
   internalGetMaxAccountStorageUsage() {
     const initialStorageUsage = near.storageUsage();
     const tempAccountId = "a".repeat(64);
-    this.accounts.insert(tempAccountId, BigInt(0));
+    this.accounts.set(tempAccountId, "0");
     const maxAccountStorageUsage = near.storageUsage() - initialStorageUsage;
     this.accounts.remove(tempAccountId);
-    return maxAccountStorageUsage * 3; // we create an entry in 3 maps
+    return maxAccountStorageUsage * BigInt(3); // we create an entry in 3 maps
   }
 
-  internalRegisterAccount({ registrantAccountId, accountId, amount }) {
+  internalRegisterAccount({ registrantAccountId, accountId, amountStr }) {
     assert(!this.accounts.containsKey(accountId), "Account is already registered");
-    this.accounts.set(accountId, BigInt(0));
+    this.accounts.set(accountId, "0");
     this.accountRegistrants.set(accountId, registrantAccountId);
-    this.accountDeposits.set(accountId, amount);
+    this.accountDeposits.set(accountId, amountStr);
   }
 
   internalUnregisterAccount({ accountId }) {
     assert(this.accounts.containsKey(accountId), "Account is not registered");
-    assert(this.internalGetBalance(accountId) == 0n, "Account has a balance");
+    assert(this.internalGetBalance(accountId) === "0", "Account has a balance");
     this.accounts.remove(accountId);
     const registrantAccountId = this.accountRegistrants.get(accountId);
     this.accountRegistrants.remove(accountId);
     const deposit = this.accountDeposits.get(accountId);
     this.accountDeposits.remove(accountId);
-    near.transfer(registrantAccountId, deposit);
+    this.internalSendNEAR(registrantAccountId, BigInt(deposit));
+    near.log("Unregistered account " + accountId + " and refunded " + deposit + " yoctoNEAR to " + registrantAccountId);
+  }
+
+  internalSendNEAR(receivingAccountId, amountBigInt) {
+    assert(amountBigInt > BigInt("0"), "The amount should be a positive number");
+    assert(receivingAccountId != near.currentAccountId(), "Can't transfer to the contract itself");
+    assert(amountBigInt < near.accountBalance(), `Not enough balance ${near.accountBalance()} to cover transfer of ${amountBigInt} yoctoNEAR`);
+    const transferPromiseId = near.promiseBatchCreate(receivingAccountId);
+    near.promiseBatchActionTransfer(transferPromiseId, amountBigInt);
+    near.promiseReturn(transferPromiseId);
   }
 
   internalGetBalance({ accountId }) {
@@ -53,19 +62,20 @@ export class FungibleToken {
 
   internalDeposit({ accountId, amount }) {
     let balance = this.internalGetBalance({ accountId });
-    let newBalance = balance + BigInt(amount);
-    this.accounts.set(accountId, newBalance);
-    this.totalSupply += BigInt(amount);
+    let newBalance = BigInt(balance) + BigInt(amount);
+    this.accounts.set(accountId, newBalance.toString());
+    let newSupply = BigInt(this.totalSupply) + BigInt(amount);
+    this.totalSupply = newSupply.toString();
   }
 
   internalWithdraw({ accountId, amount }) {
     let balance = this.internalGetBalance({ accountId });
-    let newBalance = balance - BigInt(amount);
+    let newBalance = BigInt(balance) - BigInt(amount);
     assert(newBalance >= BigInt(0), "The account doesn't have enough balance");
-    this.accounts.set(accountId, newBalance);
-    let newSupply = this.totalSupply - BigInt(amount);
+    this.accounts.set(accountId, newBalance.toString());
+    let newSupply = BigInt(this.totalSupply) - BigInt(amount);
     assert(newSupply >= BigInt(0), "Total supply overflow");
-    this.totalSupply = newSupply;
+    this.totalSupply = newSupply.toString();
   }
 
   internalTransfer({ senderId, receiverId, amount, memo: _ }) {
@@ -75,38 +85,38 @@ export class FungibleToken {
     this.internalWithdraw({ accountId: senderId, amount });
     this.internalDeposit({ accountId: receiverId, amount });
     const remainingBalance = this.internalGetBalance({ accountId: senderId });
-    if (remainingBalance === BigInt(0)) {
+    if (remainingBalance === "0") {
       this.internalUnregisterAccount({ accountId: senderId });
     }
   }
 
   @call({ payableFunction: true })
-  storage_deposit({ account_id: accountId }) {
-    const accountId = accountId || near.predecessorAccountId();
+  storage_deposit({ account_id }) {
+    const accountId = account_id || near.predecessorAccountId();
     let attachedDeposit = near.attachedDeposit();
     if (this.accounts.containsKey(accountId)) {
       if (attachedDeposit > 0) {
-        near.transfer(near.predecessorAccountId(), attachedDeposit);
+        this.internalSendNEAR(near.predecessorAccountId(), attachedDeposit);
         return { message: "Account is already registered, deposit refunded to predecessor" };
       }
       return { message: "Account is already registered" };
     }
     let storageCost = this.internalGetMaxAccountStorageUsage();
     if (attachedDeposit < storageCost) {
-      near.transfer(near.predecessorAccountId(), attachedDeposit);
-      return { message: "Not enough attached deposit to cover storage cost" };
+      this.internalSendNEAR(near.predecessorAccountId(), attachedDeposit);
+      return { message: `Not enough attached deposit to cover storage cost. Required: ${storageCost.toString()}` };
     }
-    this.internalRegisterAccount({ 
-      registrantAccountId: near.predecessorAccountId(), 
-      accountId: accountId, 
-      amount: storageCost 
+    this.internalRegisterAccount({
+      registrantAccountId: near.predecessorAccountId(),
+      accountId: accountId,
+      amountStr: storageCost.toString(),
     });
     let refund = attachedDeposit - storageCost;
     if (refund > 0) {
       near.log("Storage registration refunding " + refund + " yoctoNEAR to " + near.predecessorAccountId());
-      near.transfer(near.predecessorAccountId(), refund);
+      this.internalSendNEAR(near.predecessorAccountId(), refund);
     }
-    return { message: `Account ${accountId} registered with storage deposit of ${storageCost}` };
+    return { message: `Account ${accountId} registered with storage deposit of ${storageCost.toString()}` };
   }
 
   @call({})
