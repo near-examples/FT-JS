@@ -442,10 +442,6 @@ function log(...params) {
   .join(' ')}` // Convert to string
   );
 }
-function signerAccountId() {
-  env.signer_account_id(0);
-  return env.read_register(0);
-}
 function predecessorAccountId() {
   env.predecessor_account_id(0);
   return env.read_register(0);
@@ -667,12 +663,14 @@ let FungibleToken = (_dec = NearBindgen({
   totalSupply = "0";
 
   init({
-    total_supply: totalSupply
+    owner_id,
+    total_supply
   }) {
-    assert(BigInt(totalSupply) > BigInt(0), "Total supply should be a positive number");
+    assert(BigInt(total_supply) > BigInt(0), "Total supply should be a positive number");
     assert(this.totalSupply === "0", "Contract is already initialized");
-    this.totalSupply = totalSupply;
-    this.accounts.set(signerAccountId(), this.totalSupply);
+    this.totalSupply = total_supply;
+    this.accounts.set(owner_id, this.totalSupply);
+    log("Initialized contract with " + total_supply + " yoctoNEAR and owner " + owner_id);
   }
 
   internalGetMaxAccountStorageUsage() {
@@ -698,8 +696,10 @@ let FungibleToken = (_dec = NearBindgen({
   internalUnregisterAccount({
     accountId
   }) {
-    assert(this.accounts.containsKey(accountId), "Account is not registered");
-    assert(this.internalGetBalance(accountId) === "0", "Account has a balance");
+    const accountBalance = this.internalGetBalance({
+      accountId
+    });
+    assert(accountBalance === "0", "Account has a balance");
     this.accounts.remove(accountId);
     const registrantAccountId = this.accountRegistrants.get(accountId);
     this.accountRegistrants.remove(accountId);
@@ -721,7 +721,7 @@ let FungibleToken = (_dec = NearBindgen({
   internalGetBalance({
     accountId
   }) {
-    assert(this.accounts.containsKey(accountId), "Account is not registered");
+    assert(this.accounts.containsKey(accountId), `Account ${accountId} is not registered`);
     return this.accounts.get(accountId);
   }
 
@@ -753,15 +753,9 @@ let FungibleToken = (_dec = NearBindgen({
     this.totalSupply = newSupply.toString();
   }
 
-  internalTransfer({
-    senderId,
-    receiverId,
-    amount,
-    memo: _
-  }) {
+  internalTransfer(senderId, receiverId, amount, memo = null) {
     assert(senderId != receiverId, "Sender and receiver should be different");
-    let amountInt = BigInt(amount);
-    assert(amountInt > BigInt(0), "The amount should be a positive number");
+    assert(BigInt(amount) > BigInt(0), "The amount should be a positive number");
     this.internalWithdraw({
       accountId: senderId,
       amount
@@ -827,21 +821,17 @@ let FungibleToken = (_dec = NearBindgen({
   }
 
   ft_transfer({
-    received_id: receiverId,
+    receiver_id,
     amount,
     memo
   }) {
     let senderId = predecessorAccountId();
-    this.internalTransfer({
-      senderId,
-      receiverId,
-      amount,
-      memo
-    });
+    log("Transfer " + amount + " yoctoNEAR from " + senderId + " to " + receiver_id);
+    this.internalTransfer(senderId, receiver_id, amount, memo);
   }
 
   ft_transfer_call({
-    receiver_id: receiverId,
+    receiver_id,
     amount,
     memo,
     msg
@@ -849,16 +839,16 @@ let FungibleToken = (_dec = NearBindgen({
     let senderId = predecessorAccountId();
     this.internalTransfer({
       senderId,
-      receiverId,
+      receiver_id,
       amount,
       memo
     });
-    const promise = promiseBatchCreate(receiverId);
+    const promise = promiseBatchCreate(receiver_id);
     const params = {
       senderId: senderId,
       amount: amount,
       msg: msg,
-      receiverId: receiverId
+      receiverId: receiver_id
     };
     promiseBatchActionFunctionCall(promise, "ft_on_transfer", JSON.stringify(params), 0, 30000000000000);
     return promiseReturn();
@@ -869,10 +859,10 @@ let FungibleToken = (_dec = NearBindgen({
   }
 
   ft_balance_of({
-    account_id: accountId
+    account_id
   }) {
     return this.internalGetBalance({
-      accountId
+      account_id
     });
   }
 

@@ -11,11 +11,12 @@ export class FungibleToken {
   totalSupply = "0";
 
   @initialize({})
-  init({ total_supply: totalSupply }) {
-    assert(BigInt(totalSupply) > BigInt(0), "Total supply should be a positive number");
+  init({ owner_id, total_supply }) {
+    assert(BigInt(total_supply) > BigInt(0), "Total supply should be a positive number");
     assert(this.totalSupply === "0", "Contract is already initialized");
-    this.totalSupply = totalSupply;
-    this.accounts.set(near.signerAccountId(), this.totalSupply);
+    this.totalSupply = total_supply;
+    this.accounts.set(owner_id, this.totalSupply);
+    near.log("Initialized contract with " + total_supply + " yoctoNEAR and owner " + owner_id);
   }
 
   internalGetMaxAccountStorageUsage() {
@@ -34,18 +35,6 @@ export class FungibleToken {
     this.accountDeposits.set(accountId, amountStr);
   }
 
-  internalUnregisterAccount({ accountId }) {
-    assert(this.accounts.containsKey(accountId), "Account is not registered");
-    assert(this.internalGetBalance(accountId) === "0", "Account has a balance");
-    this.accounts.remove(accountId);
-    const registrantAccountId = this.accountRegistrants.get(accountId);
-    this.accountRegistrants.remove(accountId);
-    const deposit = this.accountDeposits.get(accountId);
-    this.accountDeposits.remove(accountId);
-    this.internalSendNEAR(registrantAccountId, BigInt(deposit));
-    near.log("Unregistered account " + accountId + " and refunded " + deposit + " yoctoNEAR to " + registrantAccountId);
-  }
-
   internalSendNEAR(receivingAccountId, amountBigInt) {
     assert(amountBigInt > BigInt("0"), "The amount should be a positive number");
     assert(receivingAccountId != near.currentAccountId(), "Can't transfer to the contract itself");
@@ -56,7 +45,7 @@ export class FungibleToken {
   }
 
   internalGetBalance({ accountId }) {
-    assert(this.accounts.containsKey(accountId), "Account is not registered");
+    assert(this.accounts.containsKey(accountId), `Account ${accountId} is not registered`);
     return this.accounts.get(accountId);
   }
 
@@ -78,16 +67,11 @@ export class FungibleToken {
     this.totalSupply = newSupply.toString();
   }
 
-  internalTransfer({ senderId, receiverId, amount, memo: _ }) {
+  internalTransfer( senderId, receiverId, amount, memo=null) {
     assert(senderId != receiverId, "Sender and receiver should be different");
-    let amountInt = BigInt(amount);
-    assert(amountInt > BigInt(0), "The amount should be a positive number");
+    assert(BigInt(amount) > BigInt(0), "The amount should be a positive number");
     this.internalWithdraw({ accountId: senderId, amount });
     this.internalDeposit({ accountId: receiverId, amount });
-    const remainingBalance = this.internalGetBalance({ accountId: senderId });
-    if (remainingBalance === "0") {
-      this.internalUnregisterAccount({ accountId: senderId });
-    }
   }
 
   @call({ payableFunction: true })
@@ -120,21 +104,22 @@ export class FungibleToken {
   }
 
   @call({})
-  ft_transfer({ receiver_id: receiverId, amount, memo }) {
+  ft_transfer({ receiver_id, amount, memo }) {
     let senderId = near.predecessorAccountId();
-    this.internalTransfer({ senderId, receiverId, amount, memo });
+    near.log("Transfer " + amount + " token from " + senderId + " to " + receiver_id);
+    this.internalTransfer(senderId, receiver_id, amount, memo);
   }
 
   @call({})
-  ft_transfer_call({ receiver_id: receiverId, amount, memo, msg }) {
+  ft_transfer_call({ receiver_id, amount, memo, msg }) {
     let senderId = near.predecessorAccountId();
-    this.internalTransfer({ senderId, receiverId, amount, memo });
-    const promise = near.promiseBatchCreate(receiverId);
+    this.internalTransfer({ senderId, receiver_id, amount, memo });
+    const promise = near.promiseBatchCreate(receiver_id);
     const params = {
       senderId: senderId,
       amount: amount,
       msg: msg,
-      receiverId: receiverId,
+      receiverId: receiver_id,
     };
     near.promiseBatchActionFunctionCall(promise, "ft_on_transfer", JSON.stringify(params), 0, 30000000000000);
     return near.promiseReturn();
@@ -146,7 +131,7 @@ export class FungibleToken {
   }
 
   @view({})
-  ft_balance_of({ account_id: accountId }) {
-    return this.internalGetBalance({ accountId });
+  ft_balance_of({ account_id }) {
+    return this.internalGetBalance({ account_id });
   }
 }

@@ -8,12 +8,11 @@ test.beforeEach(async (t) => {
   const yoctoAccountStorage = "330";
 
   const root = worker.rootAccount;
-  const contract = await root.devDeploy("./build/contract.wasm", {
-    initialBalance: NEAR.parse("300 N").toJSON(),
-    method: "init",
-    args: {
-      total_supply: totalSupply.toString(),
-    },
+  const contract = await root.createSubAccount("contract");
+  await contract.deploy("./build/contract.wasm");
+  await root.call(contract, "init", {
+    owner_id: root.accountId,
+    total_supply: totalSupply.toString(),
   });
   const alice = await root.createSubAccount("alice", { initialBalance: NEAR.parse("10 N").toJSON() });
 
@@ -74,12 +73,10 @@ test("should return message when trying to pay for storage with less than the re
 });
 
 test("should throw when trying to transfer for an unregistered account", async (t) => {
-  const { contract, alice } = t.context.accounts;
+  const { contract, alice, root } = t.context.accounts;
   try {
-    const result = await contract.call(contract, "ft_transfer", { receiver_id: alice.accountId, amount: "1" });
+    await root.call(contract, "ft_transfer", { receiver_id: alice.accountId, amount: "1" });
   } catch (error) {
-    t.true(error.message.includes("Account is not registered"));
+    t.true(error.message.includes(`Account ${alice.accountId} is not registered`));
   }
 });
-
-test.todo("should unregister account and refund storage deposit once an account has no balance left after transfer");
