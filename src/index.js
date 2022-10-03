@@ -8,6 +8,9 @@ import {
   assert,
 } from "near-sdk-js";
 
+// TODO: assert one yocto implementation
+// TODO: storage management
+
 @NearBindgen({ initRequired: true })
 export class FungibleToken {
   constructor() {
@@ -16,22 +19,43 @@ export class FungibleToken {
   }
 
   @initialize({})
-  init({ prefix, totalSupply }) {
+  init({ prefix, total_supply: totalSupply }) {
     this.accounts = new LookupMap(prefix);
     this.totalSupply = BigInt(totalSupply);
     this.accounts.set(near.signerAccountId(), this.totalSupply);
-    // In a real world Fungible Token contract, storage management is required to denfense drain-storage attack
+  }
+
+  internalGetMaxAccountStorageUsage() {
+    const initialStorageUsage = near.storageUsage();
+    const tempAccountId = "a".repeat(64);
+    this.accounts.insert(tempAccountId, 0n);
+    const maxAccountStorageUsage = near.storageUsage() - initialStorageUsage;
+    this.accounts.remove(tempAccountId);
+    return maxAccountStorageUsage;
+  }
+
+  internalRegisterAccount({ accountId }) {
+    assert(
+      !this.accounts.containsKey(accountId),
+      "Account is already registered"
+    );
+    this.accounts.set(accountId, 0n);
+  }
+
+  internalGetBalance({ accountId }) {
+    assert(this.accounts.containsKey(accountId), "Account is not registered");
+    return this.accounts.get(accountId);
   }
 
   internalDeposit({ accountId, amount }) {
-    let balance = this.accounts.get(accountId, { defaultValue: 0n });
+    let balance = this.internalGetBalance({ accountId });
     let newBalance = balance + BigInt(amount);
     this.accounts.set(accountId, newBalance);
     this.totalSupply += BigInt(amount);
   }
 
   internalWithdraw({ accountId, amount }) {
-    let balance = this.accounts.get(accountId, { defaultValue: 0n });
+    let balance = this.internalGetBalance({ accountId });
     let newBalance = balance - BigInt(amount);
     assert(newBalance >= 0n, "The account doesn't have enough balance");
     this.accounts.set(accountId, newBalance);
@@ -48,14 +72,39 @@ export class FungibleToken {
     this.internalDeposit({ accountId: receiverId, amount });
   }
 
+  @call({ payableFunction: true })
+  storage_deposit({ account_id: accountId }) {
+    const accountId = accountId || near.predecessorAccountId();
+    let attachedDeposit = near.attachedDeposit();
+    if (this.accounts.containsKey(accountId)) {
+      if (attachedDeposit > 0) {
+        near.transfer(near.predecessorAccountId(), attachedDeposit);
+        return { message: "Account is already registered, deposit refunded to predecessor" };
+      }
+      return { message: "Account is already registered" };
+    }
+    let storageCost = this.internalGetMaxAccountStorageUsage();
+    if (attachedDeposit < storageCost) {
+      near.transfer(near.predecessorAccountId(), attachedDeposit);
+      return { message: "Not enough attached deposit to cover storage cost" };
+    } 
+    this.internalRegisterAccount({ accountId });
+    let refund = attachedDeposit - storageCost;
+    if (refund > 0) {
+      near.log("Storage registration refunding " + refund + " yoctoNEAR to " + near.predecessorAccountId());
+      near.transfer(near.predecessorAccountId(), refund);
+    }
+    return { message: `Account ${accountId} registered with storage deposit of ${storageCost}` };
+  }
+
   @call({})
-  ftTransfer({ receiverId, amount, memo }) {
+  ft_transfer({ received_id: receiverId, amount, memo }) {
     let senderId = near.predecessorAccountId();
     this.internalTransfer({ senderId, receiverId, amount, memo });
   }
 
   @call({})
-  ftTransferCall({ receiverId, amount, memo, msg }) {
+  ft_transfer_call({ receiver_id: receiverId, amount, memo, msg }) {
     let senderId = near.predecessorAccountId();
     this.internalTransfer({ senderId, receiverId, amount, memo });
     const promise = near.promiseBatchCreate(receiverId);
@@ -67,7 +116,7 @@ export class FungibleToken {
     };
     near.promiseBatchActionFunctionCall(
       promise,
-      "ftOnTransfer",
+      "ft_on_transfer",
       JSON.stringify(params),
       0,
       30000000000000
@@ -76,12 +125,12 @@ export class FungibleToken {
   }
 
   @view({})
-  ftTotalSupply() {
+  ft_total_supply() {
     return this.totalSupply;
   }
 
   @view({})
-  ftBalanceOf({ accountId }) {
-    return this.accounts.get(accountId, { defaultValue: 0n });
+  ft_balance_of({ account_id: accountId }) {
+    return this.internalGetBalance({ accountId });
   }
 }
