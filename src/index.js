@@ -1,12 +1,4 @@
-import {
-  NearBindgen,
-  call,
-  view,
-  initialize,
-  near,
-  LookupMap,
-  assert,
-} from "near-sdk-js";
+import { NearBindgen, call, view, initialize, near, LookupMap, assert } from "near-sdk-js";
 
 // TODO: assert one yocto implementation
 // TODO: storage management
@@ -30,17 +22,14 @@ export class FungibleToken {
   internalGetMaxAccountStorageUsage() {
     const initialStorageUsage = near.storageUsage();
     const tempAccountId = "a".repeat(64);
-    this.accounts.insert(tempAccountId, 0n);
+    this.accounts.insert(tempAccountId, BigInt(0));
     const maxAccountStorageUsage = near.storageUsage() - initialStorageUsage;
     this.accounts.remove(tempAccountId);
-    return maxAccountStorageUsage;
+    return maxAccountStorageUsage * 3; // we create an entry in 3 maps
   }
 
   internalRegisterAccount({ registrantAccountId, accountId, amount }) {
-    assert(
-      !this.accounts.containsKey(accountId),
-      "Account is already registered"
-    );
+    assert(!this.accounts.containsKey(accountId), "Account is already registered");
     this.accounts.set(accountId, BigInt(0));
     this.accountRegistrants.set(accountId, registrantAccountId);
     this.accountDeposits.set(accountId, amount);
@@ -106,8 +95,12 @@ export class FungibleToken {
     if (attachedDeposit < storageCost) {
       near.transfer(near.predecessorAccountId(), attachedDeposit);
       return { message: "Not enough attached deposit to cover storage cost" };
-    } 
-    this.internalRegisterAccount({ accountId });
+    }
+    this.internalRegisterAccount({ 
+      registrantAccountId: near.predecessorAccountId(), 
+      accountId: accountId, 
+      amount: storageCost 
+    });
     let refund = attachedDeposit - storageCost;
     if (refund > 0) {
       near.log("Storage registration refunding " + refund + " yoctoNEAR to " + near.predecessorAccountId());
@@ -133,13 +126,7 @@ export class FungibleToken {
       msg: msg,
       receiverId: receiverId,
     };
-    near.promiseBatchActionFunctionCall(
-      promise,
-      "ft_on_transfer",
-      JSON.stringify(params),
-      0,
-      30000000000000
-    );
+    near.promiseBatchActionFunctionCall(promise, "ft_on_transfer", JSON.stringify(params), 0, 30000000000000);
     return near.promiseReturn();
   }
 
