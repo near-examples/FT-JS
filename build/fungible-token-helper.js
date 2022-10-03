@@ -42,14 +42,6 @@ var PromiseError;
   PromiseError[PromiseError["NotReady"] = 1] = "NotReady";
 })(PromiseError || (PromiseError = {}));
 
-function assert(b, str) {
-  if (b) {
-    return;
-  } else {
-    throw Error("assertion failed: " + str);
-  }
-}
-
 /*! scure-base - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 function assertNumber(n) {
   if (!Number.isSafeInteger(n)) throw new Error(`Wrong integer: ${n}`);
@@ -436,12 +428,6 @@ var CurveType;
 
 const U64_MAX = 2n ** 64n - 1n;
 const EVICTED_REGISTER = U64_MAX - 1n;
-function log(...params) {
-  env.log(`${params.map(x => x === undefined ? 'undefined' : x) // Stringify undefined
-  .map(x => typeof x === 'object' ? JSON.stringify(x) : x) // Convert Objects to strings
-  .join(' ')}` // Convert to string
-  );
-}
 function predecessorAccountId() {
   env.predecessor_account_id(0);
   return env.read_register(0);
@@ -458,18 +444,6 @@ function storageRead(key) {
     return null;
   }
 }
-function storageHasKey(key) {
-  let ret = env.storage_has_key(key);
-
-  if (ret === 1n) {
-    return true;
-  } else {
-    return false;
-  }
-}
-function storageGetEvicted() {
-  return env.read_register(EVICTED_REGISTER);
-}
 function currentAccountId() {
   env.current_account_id(0);
   return env.read_register(0);
@@ -477,24 +451,6 @@ function currentAccountId() {
 function input() {
   env.input(0);
   return env.read_register(0);
-}
-function storageUsage() {
-  return env.storage_usage();
-}
-function accountBalance() {
-  return env.account_balance();
-}
-function promiseBatchCreate(accountId) {
-  return env.promise_batch_create(accountId);
-}
-function promiseBatchActionFunctionCall(promiseIndex, methodName, args, amount, gas) {
-  env.promise_batch_action_function_call(promiseIndex, methodName, args, amount, gas);
-}
-function promiseBatchActionTransfer(promiseIndex, amount) {
-  env.promise_batch_action_transfer(promiseIndex, amount);
-}
-function promiseReturn(promiseIdx) {
-  env.promise_return(promiseIdx);
 }
 function storageWrite(key, value) {
   let exist = env.storage_write(key, value, EVICTED_REGISTER);
@@ -505,19 +461,7 @@ function storageWrite(key, value) {
 
   return false;
 }
-function storageRemove(key) {
-  let exist = env.storage_remove(key, EVICTED_REGISTER);
 
-  if (exist === 1n) {
-    return true;
-  }
-
-  return false;
-}
-
-function initialize({}) {
-  return function (target, key, descriptor) {};
-}
 function call({
   privateFunction = false,
   payableFunction = false
@@ -591,363 +535,66 @@ function NearBindgen({
   };
 }
 
-class LookupMap {
-  constructor(keyPrefix) {
-    this.keyPrefix = keyPrefix;
+var _dec, _dec2, _dec3, _class, _class2;
+let FungibleTokenHelper = (_dec = NearBindgen({}), _dec2 = call({}), _dec3 = view({}), _dec(_class = (_class2 = class FungibleTokenHelper {
+  constructor() {
+    this.data = "";
   }
 
-  containsKey(key) {
-    let storageKey = this.keyPrefix + JSON.stringify(key);
-    return storageHasKey(storageKey);
-  }
-
-  get(key) {
-    let storageKey = this.keyPrefix + JSON.stringify(key);
-    let raw = storageRead(storageKey);
-
-    if (raw !== null) {
-      return JSON.parse(raw);
-    }
-
-    return null;
-  }
-
-  remove(key) {
-    let storageKey = this.keyPrefix + JSON.stringify(key);
-
-    if (storageRemove(storageKey)) {
-      return JSON.parse(storageGetEvicted());
-    }
-
-    return null;
-  }
-
-  set(key, value) {
-    let storageKey = this.keyPrefix + JSON.stringify(key);
-    let storageValue = JSON.stringify(value);
-
-    if (storageWrite(storageKey, storageValue)) {
-      return JSON.parse(storageGetEvicted());
-    }
-
-    return null;
-  }
-
-  extend(objects) {
-    for (let kv of objects) {
-      this.set(kv[0], kv[1]);
-    }
-  }
-
-  serialize() {
-    return JSON.stringify(this);
-  } // converting plain object to class object
-
-
-  static deserialize(data) {
-    return new LookupMap(data.keyPrefix);
-  }
-
-}
-
-var _dec, _dec2, _dec3, _dec4, _dec5, _dec6, _dec7, _class, _class2;
-
-let FungibleToken = (_dec = NearBindgen({
-  initRequired: true
-}), _dec2 = initialize({}), _dec3 = call({
-  payableFunction: true
-}), _dec4 = call({
-  payableFunction: true
-}), _dec5 = call({
-  payableFunction: true
-}), _dec6 = view({}), _dec7 = view({}), _dec(_class = (_class2 = class FungibleToken {
-  accounts = new LookupMap("a");
-  accountRegistrants = new LookupMap("r");
-  accountDeposits = new LookupMap("c");
-  totalSupply = "0";
-
-  init({
-    owner_id,
-    total_supply
-  }) {
-    assert(BigInt(total_supply) > BigInt(0), "Total supply should be a positive number");
-    assert(this.totalSupply === "0", "Contract is already initialized");
-    this.totalSupply = total_supply;
-    this.accounts.set(owner_id, this.totalSupply);
-  }
-
-  internalGetMaxAccountStorageUsage() {
-    const initialStorageUsage = storageUsage();
-    const tempAccountId = "a".repeat(64);
-    this.accounts.set(tempAccountId, "0");
-    const maxAccountStorageUsage = storageUsage() - initialStorageUsage;
-    this.accounts.remove(tempAccountId);
-    return maxAccountStorageUsage * BigInt(3); // we create an entry in 3 maps
-  }
-
-  internalRegisterAccount({
-    registrantAccountId,
-    accountId,
-    amountStr
-  }) {
-    assert(!this.accounts.containsKey(accountId), "Account is already registered");
-    this.accounts.set(accountId, "0");
-    this.accountRegistrants.set(accountId, registrantAccountId);
-    this.accountDeposits.set(accountId, amountStr);
-  }
-
-  internalSendNEAR(receivingAccountId, amountBigInt) {
-    assert(amountBigInt > BigInt("0"), "The amount should be a positive number");
-    assert(receivingAccountId != currentAccountId(), "Can't transfer to the contract itself");
-    assert(amountBigInt < accountBalance(), `Not enough balance ${accountBalance()} to cover transfer of ${amountBigInt} yoctoNEAR`);
-    const transferPromiseId = promiseBatchCreate(receivingAccountId);
-    promiseBatchActionTransfer(transferPromiseId, amountBigInt);
-    promiseReturn(transferPromiseId);
-  }
-
-  internalGetBalance(accountId) {
-    assert(this.accounts.containsKey(accountId), `Account ${accountId} is not registered`);
-    return this.accounts.get(accountId);
-  }
-
-  internalDeposit({
-    accountId,
-    amount
-  }) {
-    let balance = this.internalGetBalance(accountId);
-    let newBalance = BigInt(balance) + BigInt(amount);
-    this.accounts.set(accountId, newBalance.toString());
-    let newSupply = BigInt(this.totalSupply) + BigInt(amount);
-    this.totalSupply = newSupply.toString();
-  }
-
-  internalWithdraw({
-    accountId,
-    amount
-  }) {
-    let balance = this.internalGetBalance(accountId);
-    let newBalance = BigInt(balance) - BigInt(amount);
-    assert(newBalance >= BigInt(0), "The account doesn't have enough balance");
-    this.accounts.set(accountId, newBalance.toString());
-    let newSupply = BigInt(this.totalSupply) - BigInt(amount);
-    assert(newSupply >= BigInt(0), "Total supply overflow");
-    this.totalSupply = newSupply.toString();
-  }
-
-  internalTransfer(senderId, receiverId, amount, memo = null) {
-    assert(senderId != receiverId, "Sender and receiver should be different");
-    assert(BigInt(amount) > BigInt(0), "The amount should be a positive number");
-    this.internalWithdraw({
-      accountId: senderId,
-      amount
-    });
-    this.internalDeposit({
-      accountId: receiverId,
-      amount
-    });
-  }
-
-  storage_deposit({
-    account_id
-  }) {
-    const accountId = account_id || predecessorAccountId();
-    let attachedDeposit$1 = attachedDeposit();
-
-    if (this.accounts.containsKey(accountId)) {
-      if (attachedDeposit$1 > 0) {
-        this.internalSendNEAR(predecessorAccountId(), attachedDeposit$1);
-        return {
-          message: "Account is already registered, deposit refunded to predecessor"
-        };
-      }
-
-      return {
-        message: "Account is already registered"
-      };
-    }
-
-    let storageCost = this.internalGetMaxAccountStorageUsage();
-
-    if (attachedDeposit$1 < storageCost) {
-      this.internalSendNEAR(predecessorAccountId(), attachedDeposit$1);
-      return {
-        message: `Not enough attached deposit to cover storage cost. Required: ${storageCost.toString()}`
-      };
-    }
-
-    this.internalRegisterAccount({
-      registrantAccountId: predecessorAccountId(),
-      accountId: accountId,
-      amountStr: storageCost.toString()
-    });
-    let refund = attachedDeposit$1 - storageCost;
-
-    if (refund > 0) {
-      log("Storage registration refunding " + refund + " yoctoNEAR to " + predecessorAccountId());
-      this.internalSendNEAR(predecessorAccountId(), refund);
-    }
-
-    return {
-      message: `Account ${accountId} registered with storage deposit of ${storageCost.toString()}`
-    };
-  }
-
-  ft_transfer({
-    receiver_id,
+  ft_on_transfer({
+    sender_id,
     amount,
-    memo
+    msg,
+    receiver_id
   }) {
-    assert(attachedDeposit() > BigInt(0), "Requires at least 1 yoctoNEAR to cover storage");
-    let senderId = predecessorAccountId();
-    log("Transfer " + amount + " token from " + senderId + " to " + receiver_id);
-    this.internalTransfer(senderId, receiver_id, amount, memo);
+    const concatString = `[${amount} from ${sender_id} to ${receiver_id}] ${msg} `;
+    this.data = this.data.concat("", concatString);
   }
 
-  ft_transfer_call({
-    receiver_id,
-    amount,
-    memo,
-    msg
-  }) {
-    assert(attachedDeposit() > BigInt(0), "Requires at least 1 yoctoNEAR to cover storage");
-    let senderId = predecessorAccountId();
-    this.internalTransfer(senderId, receiver_id, amount, memo);
-    const promise = promiseBatchCreate(receiver_id);
-    const params = {
-      senderId: senderId,
-      amount: amount,
-      msg: msg,
-      receiverId: receiver_id
-    };
-    promiseBatchActionFunctionCall(promise, "ft_on_transfer", JSON.stringify(params), 0, 30000000000000);
-    return promiseReturn();
+  get_contract_data() {
+    return this.data;
   }
 
-  ft_total_supply() {
-    return this.totalSupply;
-  }
+}, (_applyDecoratedDescriptor(_class2.prototype, "ft_on_transfer", [_dec2], Object.getOwnPropertyDescriptor(_class2.prototype, "ft_on_transfer"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "get_contract_data", [_dec3], Object.getOwnPropertyDescriptor(_class2.prototype, "get_contract_data"), _class2.prototype)), _class2)) || _class);
+function get_contract_data() {
+  let _state = FungibleTokenHelper._getState();
 
-  ft_balance_of({
-    account_id
-  }) {
-    return this.internalGetBalance(account_id);
-  }
-
-}, (_applyDecoratedDescriptor(_class2.prototype, "init", [_dec2], Object.getOwnPropertyDescriptor(_class2.prototype, "init"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "storage_deposit", [_dec3], Object.getOwnPropertyDescriptor(_class2.prototype, "storage_deposit"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "ft_transfer", [_dec4], Object.getOwnPropertyDescriptor(_class2.prototype, "ft_transfer"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "ft_transfer_call", [_dec5], Object.getOwnPropertyDescriptor(_class2.prototype, "ft_transfer_call"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "ft_total_supply", [_dec6], Object.getOwnPropertyDescriptor(_class2.prototype, "ft_total_supply"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "ft_balance_of", [_dec7], Object.getOwnPropertyDescriptor(_class2.prototype, "ft_balance_of"), _class2.prototype)), _class2)) || _class);
-function ft_balance_of() {
-  let _state = FungibleToken._getState();
-
-  if (!_state && FungibleToken._requireInit()) {
+  if (!_state && FungibleTokenHelper._requireInit()) {
     throw new Error("Contract must be initialized");
   }
 
-  let _contract = FungibleToken._create();
+  let _contract = FungibleTokenHelper._create();
 
   if (_state) {
-    FungibleToken._reconstruct(_contract, _state);
+    FungibleTokenHelper._reconstruct(_contract, _state);
   }
 
-  let _args = FungibleToken._getArgs();
+  let _args = FungibleTokenHelper._getArgs();
 
-  let _result = _contract.ft_balance_of(_args);
-  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(FungibleToken._serialize(_result));
+  let _result = _contract.get_contract_data(_args);
+  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(FungibleTokenHelper._serialize(_result));
 }
-function ft_total_supply() {
-  let _state = FungibleToken._getState();
+function ft_on_transfer() {
+  let _state = FungibleTokenHelper._getState();
 
-  if (!_state && FungibleToken._requireInit()) {
+  if (!_state && FungibleTokenHelper._requireInit()) {
     throw new Error("Contract must be initialized");
   }
 
-  let _contract = FungibleToken._create();
+  let _contract = FungibleTokenHelper._create();
 
   if (_state) {
-    FungibleToken._reconstruct(_contract, _state);
+    FungibleTokenHelper._reconstruct(_contract, _state);
   }
 
-  let _args = FungibleToken._getArgs();
+  let _args = FungibleTokenHelper._getArgs();
 
-  let _result = _contract.ft_total_supply(_args);
-  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(FungibleToken._serialize(_result));
-}
-function ft_transfer_call() {
-  let _state = FungibleToken._getState();
+  let _result = _contract.ft_on_transfer(_args);
 
-  if (!_state && FungibleToken._requireInit()) {
-    throw new Error("Contract must be initialized");
-  }
+  FungibleTokenHelper._saveToStorage(_contract);
 
-  let _contract = FungibleToken._create();
-
-  if (_state) {
-    FungibleToken._reconstruct(_contract, _state);
-  }
-
-  let _args = FungibleToken._getArgs();
-
-  let _result = _contract.ft_transfer_call(_args);
-
-  FungibleToken._saveToStorage(_contract);
-
-  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(FungibleToken._serialize(_result));
-}
-function ft_transfer() {
-  let _state = FungibleToken._getState();
-
-  if (!_state && FungibleToken._requireInit()) {
-    throw new Error("Contract must be initialized");
-  }
-
-  let _contract = FungibleToken._create();
-
-  if (_state) {
-    FungibleToken._reconstruct(_contract, _state);
-  }
-
-  let _args = FungibleToken._getArgs();
-
-  let _result = _contract.ft_transfer(_args);
-
-  FungibleToken._saveToStorage(_contract);
-
-  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(FungibleToken._serialize(_result));
-}
-function storage_deposit() {
-  let _state = FungibleToken._getState();
-
-  if (!_state && FungibleToken._requireInit()) {
-    throw new Error("Contract must be initialized");
-  }
-
-  let _contract = FungibleToken._create();
-
-  if (_state) {
-    FungibleToken._reconstruct(_contract, _state);
-  }
-
-  let _args = FungibleToken._getArgs();
-
-  let _result = _contract.storage_deposit(_args);
-
-  FungibleToken._saveToStorage(_contract);
-
-  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(FungibleToken._serialize(_result));
-}
-function init() {
-  let _state = FungibleToken._getState();
-
-  if (_state) throw new Error("Contract already initialized");
-
-  let _contract = FungibleToken._create();
-
-  let _args = FungibleToken._getArgs();
-
-  let _result = _contract.init(_args);
-
-  FungibleToken._saveToStorage(_contract);
-
-  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(FungibleToken._serialize(_result));
+  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(FungibleTokenHelper._serialize(_result));
 }
 
-export { FungibleToken, ft_balance_of, ft_total_supply, ft_transfer, ft_transfer_call, init, storage_deposit };
-//# sourceMappingURL=contract.js.map
+export { ft_on_transfer, get_contract_data };
+//# sourceMappingURL=fungible-token-helper.js.map

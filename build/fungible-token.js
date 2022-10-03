@@ -710,10 +710,7 @@ let FungibleToken = (_dec = NearBindgen({
     return this.accounts.get(accountId);
   }
 
-  internalDeposit({
-    accountId,
-    amount
-  }) {
+  internalDeposit(accountId, amount) {
     let balance = this.internalGetBalance(accountId);
     let newBalance = BigInt(balance) + BigInt(amount);
     this.accounts.set(accountId, newBalance.toString());
@@ -721,10 +718,7 @@ let FungibleToken = (_dec = NearBindgen({
     this.totalSupply = newSupply.toString();
   }
 
-  internalWithdraw({
-    accountId,
-    amount
-  }) {
+  internalWithdraw(accountId, amount) {
     let balance = this.internalGetBalance(accountId);
     let newBalance = BigInt(balance) - BigInt(amount);
     assert(newBalance >= BigInt(0), "The account doesn't have enough balance");
@@ -737,14 +731,8 @@ let FungibleToken = (_dec = NearBindgen({
   internalTransfer(senderId, receiverId, amount, memo = null) {
     assert(senderId != receiverId, "Sender and receiver should be different");
     assert(BigInt(amount) > BigInt(0), "The amount should be a positive number");
-    this.internalWithdraw({
-      accountId: senderId,
-      amount
-    });
-    this.internalDeposit({
-      accountId: receiverId,
-      amount
-    });
+    this.internalWithdraw(senderId, amount);
+    this.internalDeposit(receiverId, amount);
   }
 
   storage_deposit({
@@ -797,7 +785,7 @@ let FungibleToken = (_dec = NearBindgen({
     amount,
     memo
   }) {
-    assert(attachedDeposit() > BigInt(0), "Requires at least 1 yoctoNEAR to cover storage");
+    assert(attachedDeposit() > BigInt(0), "Requires at least 1 yoctoNEAR to ensure signature");
     let senderId = predecessorAccountId();
     log("Transfer " + amount + " token from " + senderId + " to " + receiver_id);
     this.internalTransfer(senderId, receiver_id, amount, memo);
@@ -809,16 +797,17 @@ let FungibleToken = (_dec = NearBindgen({
     memo,
     msg
   }) {
-    assert(attachedDeposit() > BigInt(0), "Requires at least 1 yoctoNEAR to cover storage");
+    assert(attachedDeposit() > BigInt(0), "Requires at least 1 yoctoNEAR to ensure signature");
     let senderId = predecessorAccountId();
     this.internalTransfer(senderId, receiver_id, amount, memo);
     const promise = promiseBatchCreate(receiver_id);
     const params = {
-      senderId: senderId,
+      sender_id: senderId,
       amount: amount,
       msg: msg,
-      receiverId: receiver_id
+      receiver_id: receiver_id
     };
+    log("Transfer call " + amount + " token from " + senderId + " to " + receiver_id + "params: " + JSON.stringify(params));
     promiseBatchActionFunctionCall(promise, "ft_on_transfer", JSON.stringify(params), 0, 30000000000000);
     return promiseReturn();
   }
@@ -950,4 +939,4 @@ function init() {
 }
 
 export { FungibleToken, ft_balance_of, ft_total_supply, ft_transfer, ft_transfer_call, init, storage_deposit };
-//# sourceMappingURL=contract.js.map
+//# sourceMappingURL=fungible-token.js.map
