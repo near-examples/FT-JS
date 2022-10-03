@@ -8,7 +8,7 @@
   "description": "A simple example for a fungible token contract in JavaScript.",
   "type": "module",
   "scripts": {
-    "build": "near-sdk-js build src/index.js build/contract.wasm",
+    "build": "near-sdk-js build",
     "test": "ava"
   },
   "dependencies": {

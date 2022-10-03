@@ -15,7 +15,9 @@ import {
 export class FungibleToken {
   constructor() {
     this.accounts = new LookupMap("a");
-    this.totalSupply = 0n;
+    this.accountRegistrants = new LookupMap("r");
+    this.accountDeposits = new LookupMap("c");
+    this.totalSupply = BigInt(0);
   }
 
   @initialize({})
@@ -34,12 +36,25 @@ export class FungibleToken {
     return maxAccountStorageUsage;
   }
 
-  internalRegisterAccount({ accountId }) {
+  internalRegisterAccount({ registrantAccountId, accountId, amount }) {
     assert(
       !this.accounts.containsKey(accountId),
       "Account is already registered"
     );
-    this.accounts.set(accountId, 0n);
+    this.accounts.set(accountId, BigInt(0));
+    this.accountRegistrants.set(accountId, registrantAccountId);
+    this.accountDeposits.set(accountId, amount);
+  }
+
+  internalUnregisterAccount({ accountId }) {
+    assert(this.accounts.containsKey(accountId), "Account is not registered");
+    assert(this.internalGetBalance(accountId) == 0n, "Account has a balance");
+    this.accounts.remove(accountId);
+    const registrantAccountId = this.accountRegistrants.get(accountId);
+    this.accountRegistrants.remove(accountId);
+    const deposit = this.accountDeposits.get(accountId);
+    this.accountDeposits.remove(accountId);
+    near.transfer(registrantAccountId, deposit);
   }
 
   internalGetBalance({ accountId }) {
@@ -57,19 +72,23 @@ export class FungibleToken {
   internalWithdraw({ accountId, amount }) {
     let balance = this.internalGetBalance({ accountId });
     let newBalance = balance - BigInt(amount);
-    assert(newBalance >= 0n, "The account doesn't have enough balance");
+    assert(newBalance >= BigInt(0), "The account doesn't have enough balance");
     this.accounts.set(accountId, newBalance);
     let newSupply = this.totalSupply - BigInt(amount);
-    assert(newSupply >= 0n, "Total supply overflow");
+    assert(newSupply >= BigInt(0), "Total supply overflow");
     this.totalSupply = newSupply;
   }
 
   internalTransfer({ senderId, receiverId, amount, memo: _ }) {
     assert(senderId != receiverId, "Sender and receiver should be different");
     let amountInt = BigInt(amount);
-    assert(amountInt > 0n, "The amount should be a positive number");
+    assert(amountInt > BigInt(0), "The amount should be a positive number");
     this.internalWithdraw({ accountId: senderId, amount });
     this.internalDeposit({ accountId: receiverId, amount });
+    const remainingBalance = this.internalGetBalance({ accountId: senderId });
+    if (remainingBalance === BigInt(0)) {
+      this.internalUnregisterAccount({ accountId: senderId });
+    }
   }
 
   @call({ payableFunction: true })
