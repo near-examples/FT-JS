@@ -48,11 +48,24 @@ test("should return message when account is already registered and not refund wh
     message: `Account ${alice.accountId} registered with storage deposit of ${yoctoAccountStorage}`,
   };
   t.deepEqual(result, expected);
-  const result2 = await alice.call(contract, "storage_deposit", { account_id: alice.accountId }, { attachedDeposit: NEAR.parse("1 N").toJSON() });
-  t.is(result2.message, "Account is already registered, deposit refunded to predecessor");
+  const result2 = await alice.call(contract, "storage_deposit", { account_id: alice.accountId }, { attachedDeposit: NEAR.parse("0 N").toJSON() });
+  t.is(result2.message, "Account is already registered");
 });
 
-test.todo("should return message and refund predecessor caller when trying to pay for storage for an account that is already registered");
+test("should return message and refund predecessor caller when trying to pay for storage for an account that is already registered", async (t) => {
+    const { contract, alice } = t.context.accounts;
+    const { yoctoAccountStorage } = t.context.variables;
+    const result = await alice.call(contract, "storage_deposit", { account_id: alice.accountId }, { attachedDeposit: NEAR.parse("1 N").toJSON() });
+    const expected = {
+        message: `Account ${alice.accountId} registered with storage deposit of ${yoctoAccountStorage}`,
+    };
+    t.deepEqual(result, expected);
+    const result2 = await alice.call(contract, "storage_deposit", { account_id: alice.accountId }, { attachedDeposit: NEAR.parse("1 N").toJSON() });
+    t.is(result2.message, "Account is already registered, deposit refunded to predecessor");
+    const aliceBalance = await alice.balance();
+    t.is(aliceBalance.total > NEAR.parse("9 N"), true, "alice should have received a refund");
+});
+
 test.todo("should return message when trying to pay for storage with less than the required amount and refund predecessor caller");
 test.todo("should throw when trying to transfer for an unregistered account");
 test.todo("should unregister account and refund storage deposit once an account has no balance left after transfer");
