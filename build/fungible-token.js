@@ -807,7 +807,7 @@ let FungibleToken = (_dec = NearBindgen({
       msg: msg,
       receiver_id: receiver_id
     };
-    log("Transfer call " + amount + " token from " + senderId + " to " + receiver_id + "params: " + JSON.stringify(params));
+    log("Transfer call " + amount + " token from " + senderId + " to " + receiver_id + " with message " + msg);
     promiseBatchActionFunctionCall(promise, "ft_on_transfer", JSON.stringify(params), 0, 30000000000000);
     return promiseReturn();
   }
