@@ -8,7 +8,7 @@
   "description": "A simple example for a fungible token contract in JavaScript.",
   "type": "module",
   "scripts": {
-    "build": "near-sdk-js build src/index.js build/fungible-token.wasm && near-sdk-js build src/ft-helper.js build/fungible-token-helper.wasm",
+    "build": "near-sdk-js build src/index.js out/contract.wasm",
     "test": "ava --timeout=2m"
   },
   "dependencies": {

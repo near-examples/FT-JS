@@ -1,7 +1,8 @@
 import { NearBindgen, call, view, initialize, near, LookupMap, assert } from "near-sdk-js";
+import { AnotherConcern } from "./ft_core";
 
 @NearBindgen({ initRequired: true })
-export class FungibleToken {
+export class FungibleToken extends AnotherConcern {
   accounts = new LookupMap("a");
   accountRegistrants = new LookupMap("r");
   accountDeposits = new LookupMap("c");
